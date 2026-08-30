@@ -1,0 +1,36 @@
+{
+  "name": "trading-discipline-tracker-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Trading Discipline Tracker desktop application",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.pal.tradingdisciplinetracker",
+    "productName": "Trading Discipline Tracker",
+    "files": [
+      "main.cjs",
+      "trading-discipline-tracker.html"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "artifactName": "TradingDisciplineTracker-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
