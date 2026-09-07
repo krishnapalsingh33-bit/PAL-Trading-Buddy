@@ -1,0 +1,66 @@
+name: Windows Build
+
+on:
+  push:
+    branches:
+      - main
+      - v2-json-storage
+      - v2.1-premium-polish
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify package configuration
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.version -ne '2.1.0') { throw "Expected desktop version 2.1.0, found $($pkg.version)" }
+          if ($pkg.dependencies.PSObject.Properties.Name -contains 'better-sqlite3') { throw 'better-sqlite3 must not be present' }
+          if (-not ($pkg.build.files -contains 'v2.1-premium.js')) { throw 'v2.1-premium.js must be bundled' }
+
+      - name: Syntax check
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check storage.cjs
+          node --check v2.1-premium.js
+
+      - name: Build Windows installer and portable
+        run: npm run dist
+
+      - name: Verify artifacts
+        shell: powershell
+        run: |
+          $required = @(
+            'dist/TradingDisciplineTracker-2.1.0-Setup-x64.exe',
+            'dist/TradingDisciplineTracker-2.1.0-Portable-x64.exe'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) { throw "Missing artifact: $file" }
+          }
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradingDisciplineTracker-2.1.0-Windows
+          path: |
+            desktop/dist/TradingDisciplineTracker-2.1.0-Setup-x64.exe
+            desktop/dist/TradingDisciplineTracker-2.1.0-Portable-x64.exe
+            desktop/dist/*.blockmap
