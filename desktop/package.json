@@ -2,6 +2,7 @@
   "name": "trading-discipline-tracker-desktop",
   "version": "2.0.1",
   "private": true,
+  "author": "Krishna",
   "description": "Trading Discipline Tracker desktop application",
   "main": "main.cjs",
   "scripts": {
@@ -27,14 +28,17 @@
       "output": "dist"
     },
     "win": {
-      "target": ["nsis", "portable"],
-      "artifactName": "TradingDisciplineTracker-${version}-${arch}.${ext}"
+      "target": ["nsis", "portable"]
     },
     "nsis": {
+      "artifactName": "TradingDisciplineTracker-${version}-Setup-${arch}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "TradingDisciplineTracker-${version}-Portable-${arch}.${ext}"
     }
   }
 }
