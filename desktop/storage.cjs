@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const STORAGE_VERSION = 2;
 const MAX_BACKUPS = 20;
+const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
 
 function createStorage(userDataPath) {
   const root = path.join(userDataPath, 'Trading Discipline Tracker');
@@ -136,6 +138,50 @@ function createStorage(userDataPath) {
     return getSettings();
   }
 
+  function safeScreenshotPath(filename) {
+    if (typeof filename !== 'string' || !filename) throw new Error('Invalid screenshot filename');
+    const safe = path.basename(filename);
+    if (safe !== filename || safe.includes('..')) throw new Error('Invalid screenshot filename');
+    const full = path.join(screenshotsDir, safe);
+    if (!full.startsWith(screenshotsDir + path.sep)) throw new Error('Invalid screenshot path');
+    return full;
+  }
+
+  function saveScreenshot(payload) {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid screenshot payload');
+    const dataUrl = String(payload.dataUrl || '');
+    const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/i);
+    if (!match) throw new Error('Unsupported screenshot format');
+    const data = Buffer.from(match[2], 'base64');
+    if (!data.length || data.length > MAX_SCREENSHOT_BYTES) throw new Error('Screenshot is too large');
+    const ext = match[1].toLowerCase() === 'image/png' ? 'png' : match[1].toLowerCase() === 'image/webp' ? 'webp' : 'jpg';
+    const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    const filePath = safeScreenshotPath(filename);
+    fs.writeFileSync(filePath, data, { flag: 'w' });
+    return { filename, size: data.length, type: match[1].toLowerCase() };
+  }
+
+  function readScreenshot(filename) {
+    try {
+      const filePath = safeScreenshotPath(filename);
+      if (!fs.existsSync(filePath)) return null;
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+      return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function deleteScreenshot(filename) {
+    try {
+      fs.rmSync(safeScreenshotPath(filename), { force: true });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function status() {
     const journal = load();
     return {
@@ -158,6 +204,9 @@ function createStorage(userDataPath) {
     makeBackup,
     getSettings,
     saveSettings,
+    saveScreenshot,
+    readScreenshot,
+    deleteScreenshot,
     status,
     close: () => {}
   };
