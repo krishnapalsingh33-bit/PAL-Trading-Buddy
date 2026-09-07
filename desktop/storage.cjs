@@ -1,59 +1,124 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+
+const STORAGE_VERSION = 2;
+const MAX_BACKUPS = 20;
 
 function createStorage(userDataPath) {
-  const root = path.join(userDataPath, 'journal');
+  const root = path.join(userDataPath, 'Trading Discipline Tracker');
   const backupDir = path.join(root, 'backups');
+  const screenshotsDir = path.join(root, 'screenshots');
+  const journalPath = path.join(root, 'journal.json');
+  const settingsPath = path.join(root, 'settings.json');
+
   fs.mkdirSync(backupDir, { recursive: true });
+  fs.mkdirSync(screenshotsDir, { recursive: true });
 
-  const dbPath = path.join(root, 'trading-discipline-tracker.db');
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS days (
-      date TEXT PRIMARY KEY,
-      payload TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
-
-  const get = db.prepare('SELECT payload FROM days WHERE date = ?');
-  const all = db.prepare('SELECT date, payload FROM days ORDER BY date');
-  const upsert = db.prepare(`
-    INSERT INTO days(date, payload, updated_at) VALUES(@date, @payload, @updated_at)
-    ON CONFLICT(date) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
-  `);
+  function emptyJournal() {
+    return {
+      version: STORAGE_VERSION,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      days: {}
+    };
+  }
 
   function normalize(data) {
-    if (!data || typeof data !== 'object') return { version: 2, days: {} };
-    const days = data.days && typeof data.days === 'object' ? data.days : data;
-    return { version: 2, days };
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return emptyJournal();
+    const sourceDays = data.days && typeof data.days === 'object' && !Array.isArray(data.days)
+      ? data.days
+      : data;
+
+    const normalized = {
+      version: STORAGE_VERSION,
+      createdAt: typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      days: {}
+    };
+
+    for (const [date, value] of Object.entries(sourceDays || {})) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      normalized.days[date] = value;
+    }
+
+    return normalized;
+  }
+
+  function readJson(filePath, fallback) {
+    try {
+      if (!fs.existsSync(filePath)) return fallback;
+      const raw = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(raw);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function writeJsonAtomic(filePath, data) {
+    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    const payload = JSON.stringify(data, null, 2);
+    fs.writeFileSync(tempPath, payload, { encoding: 'utf8', flag: 'w' });
+    try {
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      try { fs.rmSync(filePath, { force: true }); } catch (_) {}
+      fs.renameSync(tempPath, filePath);
+    }
+  }
+
+  function listBackups() {
+    try {
+      return fs.readdirSync(backupDir)
+        .filter(file => /^journal-.*\.json$/i.test(file))
+        .sort()
+        .reverse();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function pruneBackups() {
+    const files = listBackups();
+    for (const file of files.slice(MAX_BACKUPS)) {
+      try { fs.rmSync(path.join(backupDir, file), { force: true }); } catch (_) {}
+    }
+  }
+
+  function makeBackup() {
+    if (!fs.existsSync(journalPath)) return null;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = path.join(backupDir, `journal-${stamp}.json`);
+    try {
+      fs.copyFileSync(journalPath, target, fs.constants.COPYFILE_EXCL);
+    } catch (_) {
+      try { fs.copyFileSync(journalPath, target); } catch (_) { return null; }
+    }
+    pruneBackups();
+    return target;
   }
 
   function load() {
-    const days = {};
-    for (const row of all.all()) {
-      try { days[row.date] = JSON.parse(row.payload); } catch (_) {}
-    }
-    return { version: 2, days };
+    const data = readJson(journalPath, emptyJournal());
+    return normalize(data);
   }
 
   function save(data) {
+    const current = load();
     const normalized = normalize(data);
-    const tx = db.transaction(() => {
-      for (const [date, payload] of Object.entries(normalized.days)) {
-        upsert.run({ date, payload: JSON.stringify(payload), updated_at: new Date().toISOString() });
-      }
-    });
-    tx();
-    makeBackup();
+    normalized.createdAt = current.createdAt || normalized.createdAt;
+
+    if (fs.existsSync(journalPath)) makeBackup();
+    writeJsonAtomic(journalPath, normalized);
+    return load();
+  }
+
+  function restore(payload) {
+    const current = load();
+    const normalized = normalize(payload);
+    normalized.createdAt = current.createdAt || normalized.createdAt;
+
+    if (fs.existsSync(journalPath)) makeBackup();
+    writeJsonAtomic(journalPath, normalized);
     return load();
   }
 
@@ -61,36 +126,41 @@ function createStorage(userDataPath) {
     return JSON.stringify(load(), null, 2);
   }
 
-  function makeBackup() {
-    try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const target = path.join(backupDir, `journal-${stamp}.db`);
-    fs.copyFileSync(dbPath, target);
-    const files = fs.readdirSync(backupDir).sort().reverse();
-    for (const file of files.slice(20)) {
-      try { fs.unlinkSync(path.join(backupDir, file)); } catch (_) {}
-    }
-    return target;
+  function getSettings() {
+    return readJson(settingsPath, {});
   }
 
-  function restore(payload) {
-    const normalized = normalize(payload);
-    const tx = db.transaction(() => {
-      for (const [date, value] of Object.entries(normalized.days)) {
-        upsert.run({ date, payload: JSON.stringify(value), updated_at: new Date().toISOString() });
-      }
-    });
-    tx();
-    makeBackup();
-    return load();
+  function saveSettings(settings) {
+    const safe = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+    writeJsonAtomic(settingsPath, safe);
+    return getSettings();
   }
 
   function status() {
-    const count = db.prepare('SELECT COUNT(*) AS n FROM days').get().n;
-    return { dbPath, backupDir, dayCount: count, version: 2 };
+    const journal = load();
+    return {
+      storageRoot: root,
+      journalPath,
+      backupDir,
+      screenshotsDir,
+      settingsPath,
+      dayCount: Object.keys(journal.days).length,
+      backupCount: listBackups().length,
+      version: STORAGE_VERSION
+    };
   }
 
-  return { load, save, restore, exportJson, makeBackup, status, close: () => db.close() };
+  return {
+    load,
+    save,
+    restore,
+    exportJson,
+    makeBackup,
+    getSettings,
+    saveSettings,
+    status,
+    close: () => {}
+  };
 }
 
 module.exports = { createStorage };
