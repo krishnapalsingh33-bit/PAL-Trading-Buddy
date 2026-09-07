@@ -1,6 +1,6 @@
 {
   "name": "trading-discipline-tracker-desktop",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "author": "Krishna",
   "description": "Trading Discipline Tracker desktop application",
@@ -22,7 +22,8 @@
       "preload.cjs",
       "storage.cjs",
       "trading-discipline-tracker.html",
-      "trading-discipline-tracker-v2.html"
+      "trading-discipline-tracker-v2.html",
+      "v2.1-premium.js"
     ],
     "directories": {
       "output": "dist"
