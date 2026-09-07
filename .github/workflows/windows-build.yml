@@ -1,0 +1,72 @@
+name: Windows Desktop Build
+
+on:
+  push:
+    branches:
+      - main
+      - v2-json-storage
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        shell: pwsh
+
+      - name: Verify no native SQLite dependency
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.dependencies.'better-sqlite3' -or $pkg.devDependencies.'better-sqlite3') {
+            throw 'better-sqlite3 is still present in package.json'
+          }
+        shell: pwsh
+
+      - name: Syntax check Electron modules
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check storage.cjs
+        shell: pwsh
+
+      - name: Build installer and portable executable
+        run: npm run dist
+        shell: pwsh
+
+      - name: Verify build artifacts
+        run: |
+          $artifacts = @(
+            'dist/TradingDisciplineTracker-2.0.1-x64.exe',
+            'dist/TradingDisciplineTracker-2.0.1-x64.exe.blockmap'
+          )
+          foreach ($artifact in $artifacts) {
+            if (-not (Test-Path $artifact)) {
+              throw "Missing expected artifact: $artifact"
+            }
+          }
+        shell: pwsh
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradingDisciplineTracker-2.0.1-windows
+          path: |
+            desktop/dist/TradingDisciplineTracker-2.0.1-x64.exe
+            desktop/dist/TradingDisciplineTracker-2.0.1-x64.exe.blockmap
+            desktop/dist/latest.yml
+          if-no-files-found: error
