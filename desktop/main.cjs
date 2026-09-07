@@ -24,6 +24,27 @@ function createWindow() {
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, 'trading-discipline-tracker-final.html'));
 
+  win.webContents.on('did-finish-load', () => {
+    const patch = `(() => {
+      const bindDayFields = () => {
+        ['dayStatus', 'dayEmotion', 'dayNote'].forEach((id) => {
+          const field = document.getElementById(id);
+          if (!field || field.dataset.tdtDayBound === '1') return;
+          const markDirty = () => {
+            const saveButton = document.getElementById('saveDay');
+            if (saveButton) saveButton.style.display = 'inline-block';
+          };
+          field.addEventListener('input', markDirty);
+          field.addEventListener('change', markDirty);
+          field.dataset.tdtDayBound = '1';
+        });
+      };
+      bindDayFields();
+      new MutationObserver(bindDayFields).observe(document.body, { childList: true, subtree: true });
+    })();`;
+    win.webContents.executeJavaScript(patch, true).catch(() => {});
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
