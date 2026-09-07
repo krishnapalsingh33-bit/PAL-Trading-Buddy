@@ -23,6 +23,14 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, 'trading-discipline-tracker-v2.html'));
+
+  win.webContents.on('did-finish-load', () => {
+    const premiumScript = path.join(__dirname, 'v2.1-premium.js');
+    if (!fs.existsSync(premiumScript)) return;
+    const script = fs.readFileSync(premiumScript, 'utf8');
+    win.webContents.executeJavaScript(script, true).catch(() => {});
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
