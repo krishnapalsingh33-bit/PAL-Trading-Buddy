@@ -1,6 +1,6 @@
 {
   "name": "trading-discipline-tracker-desktop",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Trading Discipline Tracker desktop application",
   "main": "main.cjs",
@@ -8,9 +8,7 @@
     "start": "electron .",
     "dist": "electron-builder --win nsis portable"
   },
-  "dependencies": {
-    "better-sqlite3": "^11.7.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "electron": "^38.0.0",
     "electron-builder": "^26.0.0"
@@ -22,7 +20,8 @@
       "main.cjs",
       "preload.cjs",
       "storage.cjs",
-      "trading-discipline-tracker.html"
+      "trading-discipline-tracker.html",
+      "trading-discipline-tracker-v2.html"
     ],
     "directories": {
       "output": "dist"
