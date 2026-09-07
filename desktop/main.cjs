@@ -8,7 +8,7 @@ let storage = null;
 function createWindow() {
   const win = new BrowserWindow({
     width: 1420,
-    height: 900,
+    height: 920,
     minWidth: 1100,
     minHeight: 720,
     backgroundColor: '#151515',
@@ -24,13 +24,6 @@ function createWindow() {
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, 'trading-discipline-tracker-v2.html'));
 
-  win.webContents.on('did-finish-load', () => {
-    const premiumScript = path.join(__dirname, 'v2.1-premium.js');
-    if (!fs.existsSync(premiumScript)) return;
-    const script = fs.readFileSync(premiumScript, 'utf8');
-    win.webContents.executeJavaScript(script, true).catch(() => {});
-  });
-
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -43,6 +36,9 @@ function registerIpc() {
   ipcMain.handle('db:backup', () => storage.makeBackup());
   ipcMain.handle('db:restore', (_, payload) => storage.restore(payload));
   ipcMain.handle('db:status', () => storage.status());
+  ipcMain.handle('db:save-screenshot', (_, payload) => storage.saveScreenshot(payload));
+  ipcMain.handle('db:read-screenshot', (_, filename) => storage.readScreenshot(filename));
+  ipcMain.handle('db:delete-screenshot', (_, filename) => storage.deleteScreenshot(filename));
   ipcMain.handle('db:export-json', async () => {
     const result = await dialog.showSaveDialog({
       title: 'Export Trading Journal',
