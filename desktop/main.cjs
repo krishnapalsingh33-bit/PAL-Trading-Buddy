@@ -22,7 +22,7 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, 'trading-discipline-tracker-v2.html'));
+  win.loadFile(path.join(__dirname, 'trading-discipline-tracker-final.html'));
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
