@@ -22,7 +22,8 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, 'trading-discipline-tracker-v2.html'));
+  // Keep the original packaged filename so electron-builder includes the renderer.
+  win.loadFile(path.join(__dirname, 'trading-discipline-tracker.html'));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
