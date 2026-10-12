@@ -85,12 +85,22 @@ function createStorage(userDataPath) {
     return load();
   }
 
+  function deleteDay(date) {
+    if (typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+      throw new Error('Invalid journal date');
+    }
+    // Preserve a recovery point before a user-requested deletion.
+    makeBackup();
+    db.prepare('DELETE FROM days WHERE date = ?').run(date);
+    return { deleted: true, date };
+  }
+
   function status() {
     const count = db.prepare('SELECT COUNT(*) AS n FROM days').get().n;
     return { dbPath, backupDir, dayCount: count, version: 2 };
   }
 
-  return { load, save, restore, exportJson, makeBackup, status, close: () => db.close() };
+  return { load, save, restore, deleteDay, exportJson, makeBackup, status, close: () => db.close() };
 }
 
 module.exports = { createStorage };
