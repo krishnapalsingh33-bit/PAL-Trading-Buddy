@@ -310,8 +310,11 @@ function createStorage(userDataPath) {
     const out = { ...legacy, ...existing };
     let enriched = false;
     for (const key of ['direction','setup','result','r','pnl','emotion','entry','sl','tp','note','shot1','shot2']) {
-      if ((out[key] === '' || out[key] === undefined || out[key] === null) &&
-          legacy[key] !== '' && legacy[key] !== undefined && legacy[key] !== null) {
+      const missing = out[key] === '' || out[key] === undefined || out[key] === null;
+      const recoveredImage = (key === 'shot1' || key === 'shot2') &&
+        typeof legacy[key] === 'string' && /^data:image\//i.test(legacy[key]) &&
+        !(typeof out[key] === 'string' && /^data:image\//i.test(out[key]));
+      if ((missing || recoveredImage) && legacy[key] !== '' && legacy[key] !== undefined && legacy[key] !== null) {
         out[key] = legacy[key]; enriched = true;
       }
     }
