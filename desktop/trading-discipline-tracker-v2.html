@@ -48,11 +48,11 @@ function legacyMigration(){
  if(!src||typeof src!=="object")return false;
  let changed=false;
  for(const [date,old] of Object.entries(src)){
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||state.days[date]||!old||typeof old!=="object")continue;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||state.days[date]||!old||typeof old!=="object")continue;
   const day=blankDay(date);
   day.status=({auto:"Planned",rest:"Rest",observe:"No Trade",break:"Rule Break"})[old.status]||old.status||"Planned";
   day.emotion=old.dayEmotion||old.emotion||"";
-  day.note=[old.dayNotes||old.note||"",old.pnl!==undefined&&old.pnl!==""?"Legacy daily PnL: "+old.pnl:""].filter(Boolean).join("\\n\\n");
+  day.note=[old.dayNotes||old.note||"",old.pnl!==undefined&&old.pnl!==""?"Legacy daily PnL: "+old.pnl:""].filter(Boolean).join("\n\n");
   day.tags=Array.isArray(old.tags)?old.tags:[];
   day.sessions={london:{trades:[]},newyork:{trades:[]}};
   for(const key of ["london","newyork"]){
