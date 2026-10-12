@@ -194,6 +194,13 @@ function createStorage(userDataPath) {
     return day;
   }
 
+  function hasMeaningfulTradeData(t) {
+    if (!t || typeof t !== 'object') return false;
+    const scalarKeys = ['direction','setup','result','r','pnl','emotion','entry','sl','tp','note','shot1','shot2'];
+    if (scalarKeys.some(key => t[key] !== undefined && t[key] !== null && String(t[key]).trim() !== '')) return true;
+    return asArray(t.checks).length > 0 || asArray(t.tags).length > 0;
+  }
+
   function tradeIdentity(t) {
     const norm = v => String(v ?? '').trim().toLowerCase();
     const entry = norm(t.entry);
@@ -249,7 +256,11 @@ function createStorage(userDataPath) {
       const merged = currentTrades.slice();
       for (const oldTrade of oldTrades) {
         const id = tradeIdentity(oldTrade);
-        const index = merged.findIndex(t => tradeIdentity(t) === id);
+        let index = merged.findIndex(t => tradeIdentity(t) === id);
+        // Existing SQLite journals may contain a blank placeholder trade created
+        // when the legacy nested .trade object was not understood by an earlier importer.
+        // Fill that placeholder instead of adding a duplicate visible trade card.
+        if (index < 0) index = merged.findIndex(t => !hasMeaningfulTradeData(t));
         if (index < 0) { merged.push(oldTrade); report.tradesAdded++; }
         else {
           const result = mergeTrade(merged[index], oldTrade);
