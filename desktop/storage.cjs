@@ -86,7 +86,7 @@ function createStorage(userDataPath) {
   }
 
   function deleteDay(date) {
-    if (typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+    if (typeof date !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) {
       throw new Error('Invalid journal date');
     }
     // Preserve a recovery point before a user-requested deletion.
