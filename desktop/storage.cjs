@@ -173,14 +173,18 @@ function createStorage(userDataPath) {
       const raw = (value.sessions && value.sessions[sessionName]) ||
         value[sessionName] || (sessionName === 'newyork' ? value.ny : null);
       if (!raw || typeof raw !== 'object') continue;
+      // The previous desktop schema stored a single trade under session.trade
+      // (for example day.london.trade), while the newer schema uses session.trades[].
+      // Unwrap that legacy envelope before normalizing fields and embedded screenshot data URLs.
       if (Array.isArray(raw.trades)) {
         day.sessions[sessionName] = {
           ...raw,
-          trades: raw.trades.map(normalizeLegacyTrade)
+          trades: raw.trades.map(item => normalizeLegacyTrade(item && item.trade && typeof item.trade === 'object' ? item.trade : item))
         };
         continue;
       }
-      const t = normalizeLegacyTrade(raw);
+      const legacyTrade = raw.trade && typeof raw.trade === 'object' ? raw.trade : raw;
+      const t = normalizeLegacyTrade(legacyTrade);
       const hasTradeData = [
         t.direction, t.setup, t.result, t.r, t.pnl, t.entry, t.sl, t.tp,
         t.emotion, t.note, t.shot1, t.shot2
