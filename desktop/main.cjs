@@ -4,6 +4,7 @@ const fs = require('fs');
 const { createStorage } = require('./storage.cjs');
 
 let storage = null;
+let legacyImportReport = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -37,6 +38,16 @@ function registerIpc() {
   ipcMain.handle('db:backup', () => storage.makeBackup());
   ipcMain.handle('db:restore', (_, payload) => storage.restore(payload));
   ipcMain.handle('db:status', () => storage.status());
+  ipcMain.handle('db:legacy-report', () => legacyImportReport || storage.getLegacyReport());
+  ipcMain.handle('db:recover-json', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Recover an older Trading Journal backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Journal JSON', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    return { canceled: false, report: storage.importFile(result.filePaths[0]) };
+  });
   ipcMain.handle('db:export-json', async () => {
     const result = await dialog.showSaveDialog({
       title: 'Export Trading Journal',
@@ -51,6 +62,8 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   storage = createStorage(app.getPath('userData'));
+  try { legacyImportReport = storage.importLegacy(); }
+  catch (error) { console.error('Legacy journal recovery failed:', error); legacyImportReport = { error: 'Automatic recovery failed' }; }
   registerIpc();
   createWindow();
   app.on('activate', () => {
