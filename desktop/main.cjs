@@ -32,6 +32,7 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle('db:load', () => storage.load());
   ipcMain.handle('db:save', (_, data) => storage.save(data));
+  ipcMain.handle('db:delete-day', (_, date) => storage.deleteDay(date));
   ipcMain.handle('db:backup', () => storage.makeBackup());
   ipcMain.handle('db:restore', (_, payload) => storage.restore(payload));
   ipcMain.handle('db:status', () => storage.status());
