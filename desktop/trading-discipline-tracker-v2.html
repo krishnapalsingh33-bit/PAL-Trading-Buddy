@@ -43,37 +43,51 @@ function normalize(data){const src=data?.days&&typeof data.days==="object"?data.
 function legacyMigration(){
  let candidate=null;
  for(const k of OLD_KEYS){try{const raw=localStorage.getItem(k);if(raw){candidate=JSON.parse(raw);break;}}catch(_){}}
- if(!candidate)return;
+ if(!candidate)return false;
  const src=candidate.days||candidate.records||candidate;
- if(!src||typeof src!=="object")return;
+ if(!src||typeof src!=="object")return false;
+ let changed=false;
  for(const [date,old] of Object.entries(src)){
-  if(state.days[date]||!old||typeof old!=="object")continue;
-  const base=blankDay(date);
-  const day={...base,...old,date:old.date||date,sessions:{...base.sessions,...(old.sessions||{})}};
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||state.days[date]||!old||typeof old!=="object")continue;
+  const day=blankDay(date);
+  day.status=({auto:"Planned",rest:"Rest",observe:"No Trade",break:"Rule Break"})[old.status]||old.status||"Planned";
+  day.emotion=old.dayEmotion||old.emotion||"";
+  day.note=[old.dayNotes||old.note||"",old.pnl!==undefined&&old.pnl!==""?"Legacy daily PnL: "+old.pnl:""].filter(Boolean).join("\\n\\n");
+  day.tags=Array.isArray(old.tags)?old.tags:[];
+  day.sessions={london:{trades:[]},newyork:{trades:[]}};
   for(const key of ["london","newyork"]){
-   const session=day.sessions[key]||{trades:[]};
-   if(!Array.isArray(session.trades))session.trades=[];
-   const legacy=old[key]||(key==="newyork"?old.ny:null);
-   if(session.trades.length===0&&legacy){
-    const trade=legacy.trade||legacy;
-    if(trade&&typeof trade==="object"&&Object.keys(trade).length)session.trades=[{...blankTrade(),...trade,checks:Array.isArray(trade.checks)?trade.checks:[]}];
+   const legacy=old.sessions?.[key]||old[key]||(key==="newyork"?old.ny:null);
+   if(!legacy||typeof legacy!=="object")continue;
+   if(Array.isArray(legacy.trades)){
+    day.sessions[key]={...legacy,trades:legacy.trades.map(t=>({...blankTrade(),...t,checks:Array.isArray(t.checks)?t.checks:Object.entries(t.checks||{}).filter(([,v])=>!!v).map(([k])=>k),shot1:t.shot1||t.screenshot1||t.screenshot||"",shot2:t.shot2||t.screenshot2||""}))};
+    continue;
    }
-   day.sessions[key]=session;
+   const checks=Array.isArray(legacy.checks)?legacy.checks:Object.entries(legacy.checks||{}).filter(([,v])=>!!v).map(([k])=>k);
+   const hasData=!!(legacy.traded||legacy.direction||legacy.grade||legacy.result||legacy.rr||legacy.r||legacy.pnl||legacy.entry||legacy.stop||legacy.target||legacy.emotion||legacy.notes||legacy.screenshot1||legacy.screenshot2||legacy.screenshot||checks.length);
+   if(hasData){
+    day.sessions[key]={trades:[{...blankTrade(),direction:legacy.direction||"",setup:legacy.grade||legacy.setup||"",result:legacy.result||"",r:legacy.r||legacy.rr||"",pnl:legacy.pnl||"",emotion:legacy.emotion||"",entry:legacy.entry||"",sl:legacy.sl||legacy.stop||"",tp:legacy.tp||legacy.target||"",note:legacy.notes||legacy.note||"",checks,shot1:legacy.shot1||legacy.screenshot1||legacy.screenshot||"",shot2:legacy.shot2||legacy.screenshot2||"",tags:Array.isArray(legacy.tags)?legacy.tags:[]}]};
+   }
   }
   state.days[date]=normalize({days:{[date]:day}}).days[date];
+  changed=true;
  }
+ return changed;
 }
 async function load(){
- let dbLoaded=false;
+ let dbLoaded=false,legacyChanged=false;
  if(window.tdt?.db){
   try{const remote=await window.tdt.db.load();if(remote?.days&&Object.keys(remote.days).length){state=normalize(remote);dbLoaded=true;}}
   catch(error){console.error("Journal database load failed",error);}
  }
  if(!dbLoaded){
-  try{const raw=localStorage.getItem(KEY);if(raw)state=normalize(JSON.parse(raw));}catch(error){console.error("Local journal load failed",error);}
-  if(!Object.keys(state.days).length)legacyMigration();
-  state=normalize(state);
-  if(window.tdt?.db&&Object.keys(state.days).length){try{await window.tdt.db.save(state);}catch(error){console.error("Initial journal import failed",error);}}
+  try{const raw=localStorage.getItem(KEY);if(raw)state=normalize(JSON.parse(raw));}
+  catch(error){console.error("Local journal load failed",error);}
+ }
+ legacyChanged=legacyMigration();
+ state=normalize(state);
+ if(window.tdt?.db&&(!dbLoaded||legacyChanged)&&Object.keys(state.days).length){
+  try{await window.tdt.db.save(state);}
+  catch(error){console.error("Initial journal import failed",error);}
  }
  $("#connection").textContent=window.tdt?.db?"SQLITE · AUTO BACKUPS":"BROWSER STORAGE MODE";
  $("#sideNotice").textContent=window.tdt?.db?"Desktop SQLite journal connected.":"This browser preview uses isolated storage.";
