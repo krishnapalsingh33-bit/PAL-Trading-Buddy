@@ -22,13 +22,16 @@
       "main.cjs",
       "preload.cjs",
       "storage.cjs",
-      "trading-discipline-tracker-v2.html"
+      "trading-discipline-tracker.html"
     ],
     "directories": {
       "output": "dist"
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "artifactName": "TradingDisciplineTracker-${version}-${arch}.${ext}"
     },
     "nsis": {
