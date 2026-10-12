@@ -1,0 +1,46 @@
+name: Build Trading Discipline Tracker preview installer
+
+on:
+  push:
+    branches:
+      - redesign/fx-replay-discipline-tracker
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build-discipline-tracker-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out review branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Build Windows installer
+        working-directory: desktop
+        run: npx electron-builder --win nsis
+
+      - name: Publish review installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "tdt-fxr-review-$($env:GITHUB_SHA.Substring(0,7))"
+          $assets = @(Get-ChildItem "desktop/dist" -Filter "*.exe" | Where-Object { $_.Name -notmatch "uninstaller" })
+          if ($assets.Count -eq 0) { throw "No Windows installer was produced." }
+          $paths = @($assets | ForEach-Object { $_.FullName })
+          & gh release create $tag @paths --title "Trading Discipline Tracker — FX Replay UI Preview" --notes "Review installer from branch redesign/fx-replay-discipline-tracker. Review the UI before merging. It uses local SQLite storage and keeps backup/export controls. A backup is created before deleting a journal day." --prerelease
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the installer release failed." }

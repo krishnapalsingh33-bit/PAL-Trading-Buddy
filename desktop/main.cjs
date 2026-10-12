@@ -4,6 +4,7 @@ const fs = require('fs');
 const { createStorage } = require('./storage.cjs');
 
 let storage = null;
+let legacyImportReport = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -22,7 +23,8 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, 'trading-discipline-tracker-v2.html'));
+  // Keep the original packaged filename so electron-builder includes the renderer.
+  win.loadFile(path.join(__dirname, 'trading-discipline-tracker.html'));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -32,9 +34,20 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle('db:load', () => storage.load());
   ipcMain.handle('db:save', (_, data) => storage.save(data));
+  ipcMain.handle('db:delete-day', (_, date) => storage.deleteDay(date));
   ipcMain.handle('db:backup', () => storage.makeBackup());
   ipcMain.handle('db:restore', (_, payload) => storage.restore(payload));
   ipcMain.handle('db:status', () => storage.status());
+  ipcMain.handle('db:legacy-report', () => legacyImportReport || storage.getLegacyReport());
+  ipcMain.handle('db:recover-json', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Recover an older Trading Journal backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Journal JSON', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    return { canceled: false, report: storage.importFile(result.filePaths[0]) };
+  });
   ipcMain.handle('db:export-json', async () => {
     const result = await dialog.showSaveDialog({
       title: 'Export Trading Journal',
@@ -49,6 +62,8 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   storage = createStorage(app.getPath('userData'));
+  try { legacyImportReport = storage.importLegacy(); }
+  catch (error) { console.error('Legacy journal recovery failed:', error); legacyImportReport = { error: 'Automatic recovery failed' }; }
   registerIpc();
   createWindow();
   app.on('activate', () => {

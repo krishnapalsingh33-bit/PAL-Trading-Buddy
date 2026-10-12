@@ -4,9 +4,12 @@ contextBridge.exposeInMainWorld('tdt', {
   db: {
     load: () => ipcRenderer.invoke('db:load'),
     save: (data) => ipcRenderer.invoke('db:save', data),
+    deleteDay: (date) => ipcRenderer.invoke('db:delete-day', date),
     backup: () => ipcRenderer.invoke('db:backup'),
     restore: (payload) => ipcRenderer.invoke('db:restore', payload),
     exportJson: () => ipcRenderer.invoke('db:export-json'),
-    status: () => ipcRenderer.invoke('db:status')
+    status: () => ipcRenderer.invoke('db:status'),
+    legacyReport: () => ipcRenderer.invoke('db:legacy-report'),
+    recoverJson: () => ipcRenderer.invoke('db:recover-json')
   }
 });

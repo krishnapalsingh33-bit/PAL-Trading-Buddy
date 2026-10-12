@@ -28,7 +28,10 @@
       "output": "dist"
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "artifactName": "TradingDisciplineTracker-${version}-${arch}.${ext}"
     },
     "nsis": {
