@@ -21,7 +21,7 @@
 <button data-page="discipline"><span class="left"><span>◉</span> Discipline</span></button>
 </nav><div class="sidefoot">YOUR JOURNAL · YOUR RULES<br><span id="sideNotice">Loading journal storage status…</span><br><span style="color:#4d5662">FX Replay-inspired layout</span></div></aside>
 <main class="main">
-<div class="pagehead"><div><h1 id="pageTitle">Calendar</h1><div class="subtitle" id="pageSub">All journal days · Click any date to open its record</div></div><div class="actions"><button class="btn" id="backupBtn">Backup</button><button class="btn" id="exportBtn">Export data</button><button class="btn primary" id="newBtn">＋ New journal day</button></div></div>
+<div class="pagehead"><div><h1 id="pageTitle">Calendar</h1><div class="subtitle" id="pageSub">All journal days · Click any date to open its record</div></div><div class="actions"><button class="btn" id="recoverBtn">Recover old data</button><button class="btn" id="backupBtn">Backup</button><button class="btn" id="exportBtn">Export data</button><button class="btn primary" id="newBtn">＋ New journal day</button></div></div>
 <nav class="tabs" id="tabs"><button class="active" data-page="calendar">Calendar</button><button data-page="trades">Trades</button><button data-page="notes">Notes</button><button data-page="tags">Tag analysis</button><button data-page="analytics">Analytics</button></nav>
 <div class="filters"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select class="select" id="rangeSelect"><option value="all">All dates</option><option value="month">This month</option><option value="30">Last 30 days</option></select><button class="link" id="clearSearch">Clear filters</button></div><div class="filterright"><span>Filter by</span><select class="select" id="sessionFilter"><option value="all">All sessions</option><option value="london">London</option><option value="newyork">New York</option></select><select class="select" id="resultFilter"><option value="all">All results</option><option>Win</option><option>Loss</option><option>BE</option><option>Open</option></select></div></div>
 <section class="view active" id="calendarView"></section><section class="view" id="tradesView"></section><section class="view" id="notesView"></section><section class="view" id="tagsView"></section><section class="view" id="analyticsView"></section><section class="view" id="accountsView"></section><section class="view" id="disciplineView"></section>
@@ -93,6 +93,14 @@ async function load(){
  $("#sideNotice").textContent=window.tdt?.db?"Desktop SQLite journal connected.":"This browser preview uses isolated storage.";
  $("#storageNotice").textContent=window.tdt?.db?"Changes save to your existing desktop journal; automatic backups remain enabled.":"Changes stay in this browser preview and do not touch your laptop database.";
  renderAll();
+ if(window.tdt?.db){
+  try{
+   const report=await window.tdt.db.legacyReport();
+   if(report&&(report.daysAdded||report.tradesAdded||report.tradesEnriched)){
+    toast('Recovered '+(report.daysAdded||0)+' dates, '+(report.tradesAdded||0)+' trades'+(report.tradesEnriched?' and enriched '+report.tradesEnriched+' existing trades':'')+'. Existing journal data was merged, not replaced.');
+   }
+  }catch(error){console.error('Could not read recovery report',error);}
+ }
 }
 async function persist(){
  state=normalize(state);
@@ -132,6 +140,25 @@ $("#closeEditor").onclick=closeEditor;$("#cancelEditor").onclick=closeEditor;
 $("#deleteDayBtn").onclick=async()=>{if(confirm("Delete this journal day? A database backup is made before deletion.")){if(window.tdt?.db?.deleteDay){try{await window.tdt.db.deleteDay(currentDate);}catch(error){toast("Could not delete from SQLite.");return;}}delete state.days[currentDate];await persist();$("#editor").style.display="none";toast("Journal day deleted.");}};
 $("#copyYesterday").onclick=()=>{const d=new Date(currentDate+"T12:00:00");d.setDate(d.getDate()-1);const k=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");if(!state.days[k]){toast("No previous journal day found.");return;}editorDraft.note=state.days[k].note||"";editorDraft.emotion=state.days[k].emotion||"";$("#dayNote")&&($("#dayNote").value=editorDraft.note);$("#emotionInput").value=editorDraft.emotion;dirty=true;toast("Copied previous-day plan into current draft.");};
 $("#newBtn").onclick=()=>openEditor(dateNow());$("#exportBtn").onclick=async()=>{if(window.tdt?.db){try{const result=await window.tdt.db.exportJson();toast(result.canceled?"Export cancelled.":"Journal JSON exported.");}catch(error){toast("Export failed.");}}else{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="TradingDisciplineTracker-backup.json";a.click();URL.revokeObjectURL(url);toast("Journal JSON exported.");}};$("#backupBtn").onclick=async()=>{if(window.tdt?.db){try{await window.tdt.db.backup();toast("Backup created in the app's journal backups folder.");}catch(error){toast("Backup failed.");}}else{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="TradingDisciplineTracker-backup.json";a.click();URL.revokeObjectURL(url);toast("Fallback journal backup exported.");}};
+$("#recoverBtn").onclick=async()=>{
+ if(!window.tdt?.db){toast("Recovery from a file is available in the Windows desktop app.");return;}
+ try{
+  const result=await window.tdt.db.recoverJson();
+  if(result.canceled)return;
+  const latest=await window.tdt.db.load();
+  state=normalize(latest);
+  renderAll();
+  const r=result.report||{};
+  if(r.daysAdded||r.tradesAdded||r.tradesEnriched){
+   toast("Recovered "+(r.daysAdded||0)+" dates and "+(r.tradesAdded||0)+" trades. Existing records were merged safely.");
+  }else{
+   toast("No missing records found in that file. Existing journal data was left unchanged.");
+  }
+ }catch(error){
+  console.error("Journal recovery failed",error);
+  toast("Recovery failed: "+(error?.message||"Could not read that JSON file."));
+ }
+};
 $("#sidenav").querySelectorAll("[data-page]").forEach(b=>b.onclick=()=>navigate(b.dataset.page));$("#tabs").querySelectorAll("[data-page]").forEach(b=>b.onclick=()=>navigate(b.dataset.page));$("#sessionFilter").onchange=renderTrades;$("#resultFilter").onchange=renderTrades;$("#rangeSelect").onchange=renderTrades;$("#clearSearch").onclick=()=>{$("#sessionFilter").value="all";$("#resultFilter").value="all";$("#rangeSelect").value="all";renderTrades();};
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("on");setTimeout(()=>el.classList.remove("on"),2400);}
 load();
