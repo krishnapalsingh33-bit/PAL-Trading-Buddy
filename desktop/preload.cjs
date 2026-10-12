@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('tdt', {
   db: {
     load: () => ipcRenderer.invoke('db:load'),
     save: (data) => ipcRenderer.invoke('db:save', data),
+    deleteDay: (date) => ipcRenderer.invoke('db:delete-day', date),
     backup: () => ipcRenderer.invoke('db:backup'),
     restore: (payload) => ipcRenderer.invoke('db:restore', payload),
     exportJson: () => ipcRenderer.invoke('db:export-json'),
