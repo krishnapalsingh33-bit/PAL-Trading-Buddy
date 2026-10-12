@@ -99,6 +99,7 @@ function createStorage(userDataPath) {
   // Merge old JSON journals into SQLite without replacing existing day records.
   // The previous desktop release stored data in:
   // <userData>/Trading Discipline Tracker/journal.json (+ rolling JSON backups).
+  let legacyBaseDir = userDataPath;
   let lastLegacyReport = { filesFound: 0, filesRead: 0, daysAdded: 0, tradesAdded: 0, tradesEnriched: 0, sources: [] };
 
   function listLegacySources() {
@@ -134,28 +135,115 @@ function createStorage(userDataPath) {
   function firstValue(...values) {
     return values.find(v => v !== undefined && v !== null && v !== '');
   }
+  const CHECK_ALIASES = [
+    ['External buy/sell side taken', ['externalbuysellside', 'externalliquidity', 'liquiditytaken', 'externalrange', 'buysellside', 'liquiditysweep']],
+    ['DXY aligned', ['dxy', 'dxyaligned', 'dxyconfirmation', 'dxyalignment']],
+    ['CISD candle closed', ['cisd', 'cisdclosed', 'cisdconfirmation', 'candleclosed']],
+    ['Premium / discount', ['premiumdiscount', 'premiumordiscount', 'pdarray', 'discountpremium']],
+    ['Target + reason', ['targetreason', 'targetandreason', 'targetdefined', 'target']],
+    ['FVG', ['fvg', 'fairvaluegap']],
+    ['SMT', ['smt', 'smtdivergence']],
+    ['OTE', ['ote', 'optimaltradeentry']],
+    ['50% retracement', ['50retracement', '50percentretracement', 'fiftypercent', 'midpoint']],
+    ['Real displacement', ['realdisplacement', 'displacement', 'strongdisplacement']]
+  ];
+  function checkKey(value) { return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function canonicalCheck(value) {
+    if (value && typeof value === 'object') value = firstValue(value.label, value.name, value.key, value.id, value.title, '');
+    const k = checkKey(value);
+    for (const [label, aliases] of CHECK_ALIASES) {
+      const canonical = checkKey(label);
+      if (k === canonical || aliases.some(a => k === a || k.includes(a) || a.includes(k) && k.length > 3)) return label;
+    }
+    return String(value ?? '').trim();
+  }
+  function normalizeLegacyChecks(t) {
+    const raw = firstValue(t.checks, t.checklist, t.modelChecklist, t.aPlusChecklist, t.checklistItems, t.criteria, t.setupChecklist, null);
+    const values = [];
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item && typeof item === 'object') {
+          const enabled = firstValue(item.checked, item.done, item.complete, item.completed, item.value, true);
+          if (enabled === false || enabled === 0 || enabled === 'false') continue;
+          const label = canonicalCheck(item);
+          if (label) values.push(label);
+        } else if (String(item ?? '').trim()) values.push(canonicalCheck(item));
+      }
+    } else if (raw && typeof raw === 'object') {
+      for (const [key, value] of Object.entries(raw)) {
+        const enabled = value && typeof value === 'object' ? firstValue(value.checked, value.done, value.complete, value.completed, value.value, false) : value;
+        if (enabled === true || enabled === 1 || enabled === 'true' || enabled === 'checked') values.push(canonicalCheck(firstValue(value?.label, value?.name, key)));
+      }
+    }
+    // Some older builds stored checklist flags directly on the trade object.
+    const directKeys = {
+      'External buy/sell side taken': ['externalBuySellSideTaken','externalLiquidity','liquidityTaken','externalRangeTaken','buySellSideTaken'],
+      'DXY aligned': ['dxyAligned','dxyConfirmation','dxy'],
+      'CISD candle closed': ['cisdCandleClosed','cisdClosed','cisd'],
+      'Premium / discount': ['premiumDiscount','premiumOrDiscount'],
+      'Target + reason': ['targetAndReason','targetReason','targetDefined'],
+      'FVG': ['fvg','fairValueGap'],
+      'SMT': ['smt','smtDivergence'],
+      'OTE': ['ote','optimalTradeEntry'],
+      '50% retracement': ['retracement50','fiftyPercentRetracement','halfRetracement'],
+      'Real displacement': ['realDisplacement','displacement']
+    };
+    for (const [label, keys] of Object.entries(directKeys)) {
+      if (keys.some(key => t[key] === true || t[key] === 1 || t[key] === 'true' || t[key] === 'checked')) values.push(label);
+    }
+    return [...new Set(values)];
+  }
+  function normalizeScreenshot(value) {
+    if (value && typeof value === 'object') {
+      if (Buffer.isBuffer(value)) return 'data:image/png;base64,' + value.toString('base64');
+      if (Array.isArray(value.data) && (value.type === 'Buffer' || value.encoding === 'base64')) {
+        const buffer = value.type === 'Buffer' ? Buffer.from(value.data) : Buffer.from(value.data.join(''), 'base64');
+        return 'data:image/png;base64,' + buffer.toString('base64');
+      }
+      value = firstValue(value.dataUrl, value.dataURL, value.data, value.src, value.url, value.path, value.filePath, value.base64, '');
+    }
+    if (typeof value !== 'string' || !value.trim()) return '';
+    const raw = value.trim();
+    if (/^data:image\//i.test(raw)) return raw;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    const candidates = [];
+    let local = raw;
+    if (/^file:/i.test(local)) {
+      try { local = decodeURIComponent(local.replace(/^file:\/\//i, '').replace(/^\//, '')); } catch (_) {}
+    }
+    candidates.push(local, path.resolve(legacyBaseDir, local), path.resolve(userDataPath, local));
+    for (const candidate of [...new Set(candidates)]) {
+      try {
+        if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) continue;
+        const ext = path.extname(candidate).toLowerCase();
+        const mime = ({'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp','.gif':'image/gif','.bmp':'image/bmp'}[ext]) || 'application/octet-stream';
+        if (!mime.startsWith('image/')) continue;
+        return 'data:' + mime + ';base64,' + fs.readFileSync(candidate).toString('base64');
+      } catch (_) {}
+    }
+    // Preserve unprefixed base64 image data from legacy exports.
+    if (raw.length > 256 && /^[A-Za-z0-9+/=\r\n]+$/.test(raw)) return 'data:image/png;base64,' + raw.replace(/\s/g, '');
+    return raw;
+  }
   function normalizeLegacyTrade(value) {
     const t = value && typeof value === 'object' ? value : {};
-    const rawChecks = t.checks;
-    const checks = Array.isArray(rawChecks)
-      ? rawChecks
-      : Object.entries(rawChecks && typeof rawChecks === 'object' ? rawChecks : {}).filter(([, enabled]) => !!enabled).map(([key]) => key);
+    const checks = normalizeLegacyChecks(t);
     return {
       ...t,
-      direction: firstValue(t.direction, t.side, '') ,
-      setup: firstValue(t.setup, t.grade, t.setupGrade, '') ,
-      result: firstValue(t.result, t.outcome, '') ,
-      r: firstValue(t.r, t.rr, t.rMultiple, '') ,
-      pnl: firstValue(t.pnl, t.profitLoss, t.netPnl, '') ,
-      emotion: firstValue(t.emotion, t.mindset, '') ,
-      entry: firstValue(t.entry, t.entryPrice, '') ,
-      sl: firstValue(t.sl, t.stop, t.stopLoss, '') ,
-      tp: firstValue(t.tp, t.target, t.takeProfit, '') ,
-      note: firstValue(t.note, t.notes, '') ,
+      direction: firstValue(t.direction, t.side, t.tradeDirection, '') ,
+      setup: firstValue(t.setup, t.grade, t.setupGrade, t.setupGradeLabel, '') ,
+      result: firstValue(t.result, t.outcome, t.tradeResult, '') ,
+      r: firstValue(t.r, t.rr, t.rMultiple, t.rMultipleValue, '') ,
+      pnl: firstValue(t.pnl, t.profitLoss, t.netPnl, t.profit, '') ,
+      emotion: firstValue(t.emotion, t.mindset, t.tradeEmotion, '') ,
+      entry: firstValue(t.entry, t.entryPrice, t.entryLevel, '') ,
+      sl: firstValue(t.sl, t.stop, t.stopLoss, t.stopLossPrice, '') ,
+      tp: firstValue(t.tp, t.target, t.takeProfit, t.targetPrice, '') ,
+      note: firstValue(t.note, t.notes, t.tradeNote, t.journalNote, '') ,
       checks,
-      shot1: firstValue(t.shot1, t.screenshot1, t.screenshot, '') ,
-      shot2: firstValue(t.shot2, t.screenshot2, '') ,
-      tags: asArray(t.tags)
+      shot1: normalizeScreenshot(firstValue(t.shot1, t.screenshot1, t.screenshot, t.contextScreenshot, t.screenshotContext, t.chartScreenshot, t.chartImage, t.image, '')) ,
+      shot2: normalizeScreenshot(firstValue(t.shot2, t.screenshot2, t.executionScreenshot, t.screenshotExecution, t.executionImage, '')) ,
+      tags: Array.isArray(t.tags) ? t.tags : (typeof t.tags === 'string' ? t.tags.split(',').map(x => x.trim()).filter(Boolean) : [])
     };
   }
 
@@ -297,6 +385,7 @@ function createStorage(userDataPath) {
     for (const file of sources) {
       try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        legacyBaseDir = path.dirname(file);
         const beforeCounts = { daysAdded: report.daysAdded, tradesAdded: report.tradesAdded, tradesEnriched: report.tradesEnriched };
         merged = mergeLegacyPayload(merged, parsed, report);
         report.filesRead++;
@@ -316,6 +405,7 @@ function createStorage(userDataPath) {
   function importFile(filePath) {
     if (typeof filePath !== 'string' || !fs.existsSync(filePath)) throw new Error('Selected JSON file could not be found.');
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    legacyBaseDir = path.dirname(filePath);
     const before = load();
     const report = { filesFound: 1, filesRead: 1, daysAdded: 0, tradesAdded: 0, tradesEnriched: 0, sources: [{ file: filePath }] };
     const merged = mergeLegacyPayload({ version: 2, days: { ...before.days } }, parsed, report);
